@@ -1,0 +1,872 @@
+---
+title: "Final Project"
+author: "Satvika Neti"
+date: "December 8, 2019"
+output:  
+  html_document:
+    theme: paper
+    highlight: tango
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r, message = FALSE}
+library(tidyverse)
+library(naniar)
+library(plotly)
+library(ggpubr)
+library(GGally)
+library(knitr)
+
+#color palette for graphs later
+is.signif.Palette <- c("#f26f66", "#9ced66")
+
+#correlation panel function for pairs plots
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = pmax(1, cex.cor * r))
+}
+
+```
+
+# Introduction
+
+Project & Analysis by Satvika Neti
+Created for CMU Heinz, Programming R for Analytics (94-842)
+
+The question we are interested in answering is <b>"Is there a significant difference in income between men and women? Does the difference vary depending on other factors (e.g., education, marital status, criminal history, drug use, childhood household factors, profession, etc.)?"</b>
+
+Men and women have a long reported history of income gaps, and we are interested in parsing out which other factors play into that, and by how much. In order to answer this question, we first do some exploratory analysis of the data in order to see which variables might be valuable in a regression model. Then we create the regression model and plot diagnostics on it, and run some tests on the model to see which variables seem especially significant. We then run anova tests to see which interaction terms seem to be most significant to the model, and plot diagnostics again on the regression model with the most significant interaction term. 
+
+We find that race, education level, number of previous jobs, and crime history are significant predictors for the difference in income gaps between men and women, but as we'll discuss later - given the level of analysis and the strength of the regression model, we are not quite confident about the findings. 
+
+## Importing and Cleaning the Data
+
+First we import the data, change the column names to something more understandable, and print out the first 6 rows to check the data.
+
+```{r}
+#Edit Me
+nlsy <- read_csv("http://www.andrew.cmu.edu/user/achoulde/94842/final_project/nlsy79/nlsy79_income.csv")
+
+colnames(nlsy) <- 
+  c("pk",                   #primarykeyid
+    "caseid",               #caseid of respondent
+    "birthisus",            #birth country - US, not US
+    "birthissouth",         #birth - Not South, South
+    "isforlang",            #foreign language spoken at home - No, Yes
+    "forlang",              #foreign language - Other, Spanish, French, German
+    "issouth14",            #live in south at 14 - No, Yes (0,1)
+    "urbanrural14",         #urban/rural at 14 - farm/ranch, country, town/city (3,2,1)
+    "religion",             #raised religion - none, christian, jewish, other (0, 1234567, 8, 9)
+    "expedu",               #expected highest education - 1st-5th grade, 6th-8th grade, 9th-12th grade, 4yr college, post college (12345, 678,9101112, 13141516, 1718)
+    "ismilitary",            #has respondent served in armed forces - No, Yes (0,1)
+    "faplace",              #woman's place is in the home - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "fatime",               #wife with family has no time for employment - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "fauseful",             #working wife feels more useful - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "fajuvie",              #employed wife leads to juvenile delinquency - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "faroles",              #traditional gender roles best? - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "fashare",              #men should share housework - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "fahappier",            #women are happier w traditional roles - strongly disagree, disagree, agree, strongly agree (1,2,3,4) - leave numeric?
+    "expoccup1979",         #aspiration occupation at 35 - 
+    "isedu5yrs",            #in school or not in 5 years - no, yes (0,1)
+    "race",                 #race - other, black, hispanic (3,2,1)
+    "gender",               #gender - female, male (2,1)
+    "maritalstatus1979",    #marital status - married, never married, other (1, 0, 2356)
+    "famsize1979",          #family size in 1979
+    "ispoverty1979",        #family poverty in 1979 - no, yes (0,1)
+    "ispolicestop",         #stopped by police? - no, yes (0,1)
+    "agepolicestop",        #age first time stopped by police
+    "ischarged",            #charged with illegal activity? - no, yes (0,1)
+    "agealc",               #age starting drinking
+    "numweed",              #number of times used marijuana
+    "ageweed",              #age first time using marijuana
+    "totinc1990",           #total income 1990
+    "ispoverty1990",        #family poverty in 1990 - no, yes (0,1)
+    "edu1990",              #highest grade completed as of 1990 - 1st-5th grade, 6th-8th grade, 9th-12th grade, 4yr college, post college (12345, 678,9101112, 13141516, 17181920)
+    "numjobs1990",          #number of different jobs by 1990
+    "numchild1990",         #number of children in household
+    "youngchild1990",       #age of youngest child
+    "numcoke",              #number of times used cocaine
+    "agecoke",              #age first time used cocaine
+    "typeemp2000",          #type of employer in 2000
+    "typeoccup2000",        #type of occupation in 2000
+    "spouseoccup2000",      #type of occupation for spouse in 2000
+    "spousehrsweek2000",    #hours per week worked by spouse
+    "numchildren2000",      #number of biological children in 2000
+    "totinc2000",           #total income 2000
+    "famsize2000",          #family size 2000
+    "totfaminc2000",        #total family income 2000
+    "ispoverty2000",        #family poverty in 2000 - no, yes (0,1)
+    "marstatcollap2000",    #marital status collapsed 2000
+    "maritalstatus2000",    #marital status 2000 - married, never married, other (1,0,236)
+    "mnthsmarraigebirth",   #months between marraige & birth of first child
+    "dobpartner2012",       #date of birth of partner in 2012
+    "typeemp2012",          #type of employer 2012
+    "typeoccup2012",        #type of occupation 2012
+    "spouseoccup2012",      #type of occupation spouse 2012
+    "numwksspouse2012",     #number of weeks spouse works 2012
+    "numdrinks2012",        #number of drinks on days that you drink 
+    "totinc2012",           #total income 2012
+    "estinc20121",          #estimated income 2012 - 1
+    "estinc20122",          #estimated income 2012 - 2
+    "totincspouse2012",     #total income spouse 2012
+    "estincspouse2012",     #estimated income spouse 2012
+    "famsize2012",          #family size 2012
+    "region2012",           #region of current residence - northeast, north central, south, west (1,2,3,4)
+    "edu2012",              #education level in 2012 - 
+    "urbanrural2012",       #residence urban or rural 2012 - rural, urban, unknown, (0,1,2)
+    "numjobs2012")          #number of different jobs by 2012
+
+head(nlsy)
+
+```
+
+Taking a look at this data, it's clear to see that we need to recode some of the variables to be in the correct format we need. We recode the variables we need to get a good exploratory analysis of the data, skipping over the ones we are not interested in exploring. Particularly, we recode as factor the family attitudes questions (`faplace`, `fatime`, `fauseful`, `fajuvie`, `faroles`, `fashare`, `fahappier`), race (`race`), gender (`gender`), the crime questions (`ispolicestop`, `ischarged`), education level in 2012 (`edu2012`), and recode as numeric the total incomes in 1990 (`totinc1990`), 2000 (`totinc2000`), and 2012 (`totinc2012`) and the number of previous jobs in 2012 (`numjobs2012`). 
+
+`totinc2012` will become our output variable that we test the rest of these covariates on, and for those variables we also recoded all of the nonrespondents to `na`. We will look at how we process those missing values in the analysis section. 
+
+`totinc2012`, `totinc1990`, and `totinc2000` are also all topcoded, which means that the top 2% of the data all have the same number, which is the maximum of the responses. We will also look at how to deal with these values later on in the analysis as well.
+
+* A note that we recode the family attitudes questions for `fauseful` and `fashare` to correspond with a higher factor level implying a higher level of sexism in the responses to those questions, which is not how its coded numerically. 
+
+You can see exactly how all of these variables were recoded in the Appendix section. 
+
+```{r}
+nlsy <- nlsy %>%
+  mutate(birthisus = recode_factor(as.factor(birthisus), `1` = "US", `2`= "Not US"), 
+         birthissouth = recode_factor(as.factor(birthissouth), `0`= "Not South", `1`= "South"),
+         isforlang = recode_factor(as.factor(isforlang), `0` = "No", `1` = "Yes"),
+         forlang = recode_factor(as.factor(forlang), `4` = "Other", `1` = "Spanish", `2` = "French", `3`= "German"),
+         issouth14 = recode_factor(as.factor(issouth14), `0` = "No", `1` = "Yes"),
+         urbanrural14 = recode_factor(as.factor(urbanrural14), `3` = "Farm", `2`= "Country", `1` = "Town/City"),
+         religion = recode_factor(as.factor(religion), `0` = "None", `1` = "Christian", `2` = "Christian", `3` = "Christian", `4` = "Christian", `5` = "Christian", `6` = "Christian", `7` = "Christian", `8` = "Jewish", `9` = "Other"),
+         expedu = recode_factor(as.factor(expedu), `1`="Elementary", `2`="Elementary", `3`="Elementary", `4`="Elementary", `5`="Elementary", `6`="Middle", `7`="Middle", `8`="Middle", `9`="High", `10`="High", `11`="High", `12`="High", `13`="College", `14`="College", `15`="College", `16`="College", `17`="Post College", `18`="Post College"),
+         ismilitary = recode_factor(as.factor(ismilitary), `0`="No", `1`="Yes"),
+         faplace = recode_factor(as.factor(faplace), `1`= "Strongly Disagree", `2` = "Disagree", `3`="Agree", `4`="Strongly Agree"),
+         fatime = recode_factor(as.factor(fatime), `1`= "Strongly Disagree", `2` = "Disagree", `3`="Agree", `4`="Strongly Agree"),
+         fauseful = recode_factor(as.factor(fauseful), `4`="Strongly Agree", `3`="Agree", `2` = "Disagree", `1`= "Strongly Disagree"),
+         fajuvie = recode_factor(as.factor(fajuvie), `1`= "Strongly Disagree", `2` = "Disagree", `3`="Agree", `4`="Strongly Agree"),
+         faroles = recode_factor(as.factor(faroles), `1`= "Strongly Disagree", `2` = "Disagree", `3`="Agree", `4`="Strongly Agree"),
+         fashare = recode_factor(as.factor(fashare), `4`="Strongly Agree", `3`="Agree", `2` = "Disagree", `1`= "Strongly Disagree"),
+         fahappier = recode_factor(as.factor(fahappier), `1`= "Strongly Disagree", `2` = "Disagree", `3`="Agree", `4`="Strongly Agree"),
+         #skipping expoccup1979
+         #skipping isedu5yrs
+         race = recode_factor(as.factor(race), `3`="Other", `2`="Black", `1`="Hispanic"),
+         gender = recode_factor(as.factor(gender), `1`="Male", `2`="Female"),
+         #skipping maritalstatus1979
+         #skippingfamsize1979
+         #skippingispoverty1979
+         ispolicestop = recode_factor(as.factor(ispolicestop), `0`="No", `1`="Yes"),
+         #skipping agepolicestop
+         ischarged = recode_factor(as.factor(ischarged), `0`="No", `1`="Yes"),
+         #skipping agealc
+         #skipping numweed
+         #skipping ageweed
+         totinc1990 = as.numeric(totinc1990),
+         #skipping ispoverty1990
+         #skipping edu1990
+         #skipping numjobs1990
+         #skipping numchild1990
+         #skipping youngchild1990
+         #skipping numcoke
+         #skipping agecoke
+         #skipping typemp2000
+         #skipping typeoccup2000
+         #skipping spouseoccup2000
+         #skipping spousehrsweek2000
+         #skipping numchildren2000
+         totinc2000 = as.numeric(totinc2000),
+         #skipping famsize2000
+         #skipping totfaminc2000
+         #skipping ispoverty2000
+         #skipping marstatcollap2000
+         #skipping maritalstatus2000
+         #skipping mnthsmarraigebirth
+         #skipping dobpartner2012
+         #SKIPPING EYPEMP2012 ---- FOR NOW
+         #SKIPPING TYPEOCCUP2012 ---- FOR NOW
+         #skipping spouseoccup2012
+         #skipping numwksspouse2012
+         #skipping numdrinks2012
+         totinc2012 = as.numeric(totinc2012),
+         #skipping estinc20121
+         #skipping estinc20122
+         totincspouse2012 = as.numeric(totincspouse2012),
+         #skipping estincspouse2012
+         famsize2012 = as.numeric(famsize2012),
+         region2012 = recode_factor(as.factor(region2012), `1` = "Northeast", `2`="North Central", `3`="South", `4` = "West"),
+         edu2012 = recode_factor(as.factor(edu2012), `0`="Elementary",`93`="Elementary",`94`="Elementary",`1`="Elementary",`2`="Elementary",`3`="Elementary",`4`="Elementary",`5`="Elementary",`6`="Middle",`7`="Middle",`8`="Middle",`9`="High",`10`="High",`11`="High",`12`="High",`13`="College",`14`="College",`15`="College",`16`="College",`17`="Post College",`18`="Post College",`19`="Post College",`20`="Post College",`95`="Unknown"),
+         urbanrural2012 = recode_factor(as.factor(urbanrural2012), `0`="Rural", `1` = "Urban", `2`="Unknown"),
+         numjobs2012 = as.numeric(numjobs2012)
+)
+
+nlsy <- nlsy %>%
+  replace_with_na(replace = list(totinc2012 = c(-1,-2,-3,-4,-5))) %>%
+  replace_with_na(replace = list(totinc2000 = c(-1,-2,-3,-4,-5))) %>%
+  replace_with_na(replace = list(totinc1990 = c(-1,-2,-3,-4,-5))) %>%
+  replace_with_na(replace = list(ischarged = c(-1,-2,-3,-4,-5))) %>%
+  replace_with_na(replace = list(edu2012 = c(-1,-2,-3,-4,-5))) %>%
+  replace_with_na(replace = list(ispolicestop = c(-1,-2,-3,-4,-5)))
+
+head(nlsy)
+
+```
+
+# Data Summary & Methodology
+
+We'll start by doing some exploratory analysis of the variables we're interested in. As we work through the data, we'll explore what the graphs and plots look like when we leave the topcoded values in vs when we don't, and we'll be removing the missing values for only the variables we're exploring at that stage as we graph. This is to ensure a readable plot and ensure that what we're seeing in those plots makes sense, but it does also means that our findings are only generalizable to the people that answered that specific question - survey nonresponse error is a huge issue with survey generalizability and we need to make sure to take that into account when exploring our findings later. 
+
+## Introduction
+
+We first want to just get a sense of where our data is on the variables we're interested in exploring - `gender` and `totinc2012`. 
+
+We first create a simple count table to see how many people of each gender we have in our responses, and then partition by both race and education to see what that distribution looks like. 
+
+```{r}
+count.gender <- nlsy %>%
+  group_by(gender) %>%
+  summarize(count = n()) 
+
+kable(count.gender, col.names = c("Gender", "Count"), caption = "Count by Gender")
+
+count.genderrace.plot <- nlsy %>%
+  ggplot(aes(x=gender)) + geom_density(aes(fill=race), alpha = 0.5)
+
+count.genderrace.plot + ggtitle("Distribution of Gender by Race") + xlab("Gender") + ylab("Count")
+
+count.genderedu.plot <- nlsy %>%
+  ggplot(aes(x=gender)) + geom_density(aes(fill=edu2012), alpha = 0.5)
+
+count.genderedu.plot + ggtitle("Distribution of Gender by Education") + xlab("Gender") + ylab("Count")
+
+```
+
+We see that there seem to be the same amount of men and women in our data, which is important for further statistical analysis, but that some factors in our education subsets have less than 30 people, which is important to note for further analysis as well. T-tests do not work well on groups less than 30 people, so we need to do further data cleaning before using `edu2012` in our analysis. 
+
+We display these as plots here, but you can see the full count tables in the appendix section. 
+
+Another important component of this data are the top coded values - this table shows us how many men and women are in the top coded section which will be important to know while deciding whether to remove them or not. There don't seem to be a significant number of people in either category, so we may be able to remove them safely. We'll continue exploring this later, but it is interesting to note that there are significantly more men than women in the topcoded values. 
+
+```{r}
+
+count.gendertopcoded <- nlsy %>%
+  filter(!is.na(totinc2012)) %>%
+  group_by(gender) %>%
+  summarize(numtopcded = sum(totinc2012==max(totinc2012, na.rm=TRUE)))
+
+kable(count.gendertopcoded, col.names = c("Gender", "Num Topcoded"), caption = "Number of Topcoded Values by Gender")
+```
+
+The outcome variable we're interested in is `totinc2012`, so let's look at what that looks like across gender, with both a boxplot and a histogram. Here, we've plotted the graphs without the topcoded values on the left, and the graphs with the topcoded values on the right. We can see with these that men seem to be making more than women on average, there seem to be more women on the bottom of the income specturm than men, and that the topcoded values seem to be outliers for both genders, and the data gets more spread out and also less confident (the gap between men and women looks less significant) when we take them out. It's also easier to see trends in the data with them taken out.  
+
+```{r}
+income.genderbox.top <- nlsy %>%
+  ggplot(aes(x=gender, y=totinc2012)) + geom_boxplot()
+
+#income.genderbox.top
+
+income.genderbox <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  ggplot(aes(x=gender, y=totinc2012)) + geom_boxplot()
+
+#income.genderbox
+
+income.genderhist <- nlsy %>%
+  filter(!is.na(totinc2012)) %>%
+  ggplot(aes(x=totinc2012)) + geom_density(aes(fill=gender), alpha = 0.5)
+
+#income.genderhist
+
+income.genderhist.top <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  ggplot(aes(x=totinc2012)) + geom_density(aes(fill=gender), alpha = 0.5)
+
+#income.genderhist.top
+
+
+#subplot(ggplotly(income.genderbox + ggtitle("Income by Gender (w/ TopCoded vs w/out)") + xlab("Gender") + ylab("Income")),
+ #       ggplotly(income.genderbox.top + xlab("Gender") + ylab("Income")),
+  #      shareY = TRUE)
+
+#subplot(ggplotly(income.genderhist + ggtitle("Distribution of Income by Gender (w/ TopCoded vs w/out)") + xlab("Income") + ylab("Count") + theme(legend.position = "none")),
+ #       ggplotly(income.genderhist.top + ylab("Income")),
+  #      shareY = TRUE) 
+
+
+ggarrange(income.genderbox + ggtitle("Income by Gender") + xlab("Gender") + ylab("Income"), 
+          income.genderbox.top + ggtitle("Income by Gender (w TopCoded)") + xlab("Gender") + ylab("Income"), 
+          ncol = 2, nrow = 1, common.legend = TRUE, legend = "bottom")
+ggarrange(income.genderhist + ggtitle("Distribution of Income by Gender") + xlab("Gender") + ylab("Income"), 
+          income.genderhist.top + ggtitle("Distribution of Income by Gender (w TopCoded)") + xlab("Gender") + ylab("Income"), 
+          ncol = 2, nrow = 1, common.legend = TRUE, legend = "bottom")
+
+```
+
+Now that we have a basic idea of what our data looks like across the variables we are interested in, we now turn to a more nuanced analysis of each variable and its relationship with income gaps between men and women. Unless specifed otherwise, in each of these analyses, we will be taking the topcoded variables out in order to better showcase the trends in the data. 
+
+## Race & Gender
+
+We know that race and income gaps are are incredibly interrelated with one another, and we can guess that race and gender would be related in an analysis of income gaps. Here we first explore in a table and then a plot what income gaps for men and women look like across race. 
+
+Income gaps seem smallest for black people, which is interesting, and largest for the "other" category, which makes sense since "other" would be every other race except for black and hispanic, and that's a lot of races and therefore a lot of variation. The gaps are also statisitically significant for each racial group. 
+
+```{r}
+race.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  group_by(race) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05)
+
+kable(race.gender, col.names = c("Race", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Race", digits = c(2,2,2))
+
+race.gender.plot <- race.gender %>%
+  ggplot(aes(x=race, y=incomegap, fill = is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette)
+
+race.gender.plot + ggtitle("Income Gaps by Race") + xlab("Race") + ylab("Income Gap between Men & Women") + labs(fill = "Significant?") 
+#ggplotly(race.gender)
+```
+
+## Education & Gender
+
+We next do the same with education and gender. Except for the Elementary category (which we'll remember did not have >30 people in that group when broken down by gender), income gaps are significant across education categories, and seem to be largest during college and post-college. 
+
+```{r}
+edu.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  filter(!is.na(edu2012)) %>%
+  group_by(edu2012) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05)
+
+kable(edu.gender, col.names = c("Education Level", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Education Level", digits = c(2,2,2))
+
+edu.gender.plot <- edu.gender %>%
+  ggplot(aes(x=edu2012, y=incomegap, fill = is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette)
+
+edu.gender.plot + ggtitle("Income Gaps by Education") + xlab("Education Level") + ylab("Income Gap between Men & Women") + labs(fill = "Significant?")
+#ggplotly(edu.gender)
+```
+
+## Number of Previous Jobs & Gender
+
+This variable is one where we test to see what leaving in or taking out the topcoded values will do for our analysis. 
+
+We see the difference that taking them out makes on the data, because it's much more spread out now that it doesn't have all of those outliers. We see that the top coded values, for both men and women, are clearly outliers, and we also see that the confidence intervals undestandably get larger when we take the variables out. Number of previous jobs also seems to trend toward fewer previous jobs meaning higher income for both men and women, and there actually seems to be a pretty even distribution of genders along the spectrum. The trend lines seem to show that females are more likely to have a higher income with more jobs, but the confidence intervals seems so large that it doesn't seem significant. 
+
+```{r}
+numjobs.gender.top <- nlsy %>%
+  ggplot(aes(x=numjobs2012, y=totinc2012, color=gender), na.rm=TRUE) + geom_point() + stat_smooth()
+
+numjobs.gender <- nlsy%>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  ggplot(aes(x=numjobs2012, y=totinc2012, color=gender), na.rm=TRUE) + geom_point() + stat_smooth()
+
+#subplot(ggplotly(numjobs.gender.top + ggtitle("Total Income by Number of Previous Jobs") + xlab("Number of Previous Jobs") + ylab("Total Income") + theme(legend.position = "none")),
+ #       ggplotly(numjobs.gender + ggtitle("Total Income by Number of Previous Jobs") + ylab("Total Income")),
+  #      shareY = TRUE)
+
+ggarrange(numjobs.gender.top + ggtitle("Total Income by Number of Previous Jobs") + xlab("Number of Previous Jobs") + ylab("Total Income"), 
+          numjobs.gender + ggtitle("Total Income by Number of Previous Jobs") + xlab("Number of Previous Jobs") + ylab("Total Income"), 
+          ncol = 2, nrow = 1, common.legend = TRUE, legend = "bottom")
+#ggplotly(numjobs.gender)
+
+```
+
+## Family Attitudes & Gender
+
+It makes sense to be curious about the income gaps and their relationship with the family attitudes questions. When we plot them, we see that the general trend (overall) is that the more sexist responses lead to higher income gaps until the last factor (either "Strongly Agree" or "Strongly Disagree", based on the question) - this could be because those women had more incomes of 0, or because there were fewer responses. We see, interestingly, that all the income gaps are significant. 
+
+These graphs are interesting, but I don't think I'll use them in my analysis - it would add too many variables, and I would assume that the correlation between these variables would be quite strong and potentially impact the regression.
+
+```{r}
+
+faplace.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(faplace = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(faplace)) %>%
+  group_by(faplace) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=faplace, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#faplace.gender
+#ggplotly(faplace.gender)
+
+fatime.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(fatime = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(fatime)) %>%
+  group_by(fatime) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=fatime, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#fatime.gender
+#ggplotly(fatime.gender)
+
+fauseful.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(fauseful = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(fauseful)) %>%
+  group_by(fauseful) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=fauseful, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#fauseful.gender
+#ggplotly(fauseful.gender)
+
+fajuvie.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(fajuvie = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(fajuvie)) %>%
+  group_by(fajuvie) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=fajuvie, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#fajuvie.gender
+#ggplotly(fajuvie.gender)
+
+faroles.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(faroles = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(faroles)) %>%
+  group_by(faroles) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=faroles, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#faroles.gender
+#ggplotly(faroles.gender)
+
+fashare.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(fashare = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(fashare)) %>%
+  group_by(fashare) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=fashare, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#fashare.gender
+#ggplotly(fashare.gender)
+
+fahappier.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  replace_with_na(replace = list(fahappier = c(-1,-2,-3,-4,-5))) %>%
+  filter(!is.na(fahappier)) %>%
+  group_by(fahappier) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) %>%
+  ggplot(aes(x=fahappier, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + theme(axis.text.x = element_text(angle = 15, vjust = 1, hjust = 1))
+
+
+#fahappier.gender
+#ggplotly(fahappier.gender)
+
+ggarrange(faplace.gender + ggtitle("WOMAN'S PLACE IS IN THE HOME?") + ylab("Income Gaps"), 
+          fatime.gender + ggtitle("WIFE WITH FAMILY HAS NO TIME FOR OTHER EMPLOYMENT?"), 
+          fauseful.gender+ ggtitle("WORKING WIFE FEELS MORE USEFUL?"), 
+          ncol=3, nrow=1, common.legend = TRUE, legend="bottom")
+ggarrange(fajuvie.gender + ggtitle("EMPLOYMENT OF WIVES LEADS TO JUVENILE DELINQUENCY?") + ylab("Income Gaps"), 
+          faroles.gender + ggtitle("TRADITIONAL HUSBAND/WIFE ROLES BEST?"), 
+          ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+ggarrange(fashare.gender + ggtitle("MEN SHOULD SHARE HOUSEWORK?") + ylab("Income Gaps"), 
+          fahappier.gender + ggtitle("WOMEN ARE HAPPIER IN TRADITIONAL ROLES?"), 
+          ncol=2, nrow=1, common.legend = TRUE, legend="bottom")
+
+```
+
+## Crime & Gender
+
+We now turn to our analysis of crime and its relationship with income gaps. We have two crime related variables we're looking at - `ispolicestop` and `ischarged`. I'd like to use them in my regression later but am curious at their relationship, which I would assume would be quite strongly related. I'm also particularly curious about their relationship with race and income gaps together. 
+
+```{r}
+
+policestop.gender <- nlsy %>%
+  filter(!is.na(ispolicestop)) %>%
+  group_by(ispolicestop) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) 
+
+kable(policestop.gender, col.names = c("Stopped by Police?", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Police Stops",digits = c(2,2,2))
+
+policestop.gender.plot <- policestop.gender %>%
+  ggplot(aes(x=ispolicestop, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette)
+
+#policestop.gender.plot
+#ggplotly(policestop.gender)
+
+crime.gender <- nlsy %>%
+  filter(!is.na(ischarged)) %>%
+  group_by(ischarged) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) 
+
+kable(crime.gender, col.names = c("Charged with Crime?", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Crime Charges",digits = c(2,2,2))
+
+crime.gender.plot <- crime.gender %>%
+  ggplot(aes(x=ischarged, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette)
+
+#crime.gender.plot
+#ggplotly(crime.gender)
+
+ggarrange(policestop.gender.plot + ggtitle("Income Gaps by Police Stopped?") + xlab("Stopped by Police Ever?") + ylab("Income Gap") + labs(fill = "Significant?"), 
+          crime.gender.plot + ggtitle("Income Gaps by Crime Charged?") + xlab("Charged with Crime Ever?") + ylab("Income Gap") + labs(fill = "Significant?"), 
+          ncol=2, common.legend = TRUE, legend = "bottom")
+
+```
+
+Interestingly, for both variables, the income gap seems smaller for those who have been stopped by the police at some point in their lives, and they're both statistically significant. 
+
+We know that race and being charged with a crime or being stopped by the police have a relationship with each other in our society, so we check the significance of crime on income gaps between the races. 
+
+```{r}
+
+policestop.gender.race <- nlsy %>%
+  filter(!is.na(ispolicestop)) %>%
+  group_by(ispolicestop, race) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) 
+
+kable(policestop.gender.race, col.names = c("Stopped by Police?", "Race", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Race & Police Stops",digits = c(2,2,2))
+
+policestop.gender.race.plot <- policestop.gender.race %>%
+  ggplot(aes(x=ispolicestop, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + facet_grid(. ~ race)
+
+#policestop.gender.race.plot
+
+crime.gender.race <- nlsy %>%
+  filter(!is.na(ischarged)) %>%
+  group_by(ischarged, race) %>%
+  summarize(incomegap = (t.test(totinc2012 ~ gender, na.rm = TRUE))$estimate[1]-(t.test(totinc2012 ~ gender, na.rm=TRUE))$estimate[2], 
+            lower = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[1],
+            upper = t.test(totinc2012 ~ gender, na.rm=TRUE)$conf.int[2],
+            is.signif = t.test(totinc2012 ~ gender, na.rm=TRUE)$p.value < 0.05) 
+
+kable(crime.gender.race, col.names = c("Charged with Crime?", "Race", "Income Gap", "Lower Bound", "Upper Bound", "Significant?"), caption = "Income Gaps by Race and Crime Charges",digits = c(2,2,2))
+
+crime.gender.race.plot <- crime.gender.race %>%
+  ggplot(aes(x=ischarged, y=incomegap, fill=is.signif)) + geom_bar(stat="identity", position="dodge") + geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position = position_dodge(0.9)) + scale_fill_manual(values = is.signif.Palette) + facet_grid(. ~ race)
+
+#crime.gender.race.plot
+
+ggarrange(policestop.gender.race.plot + ggtitle("Income Gaps by Race & Police Stopped?") + xlab("Stopped by Police Ever?") + ylab("Income Gap") + labs(fill = "Significant?"), 
+          crime.gender.race.plot + ggtitle("Income Gaps by Race & Crime Charged?") + xlab("Charged with Crime Ever?") + ylab("Income Gap") + labs(fill = "Significant?"), 
+          ncol=2, common.legend = TRUE, legend = "bottom")
+
+```
+
+We see that again, income gaps go down after being stopped by the police or being charged with a crime across all races, with only one grouping of the data being not significant. This may have to do with the counts of men and women in that category. We also see that the error bars (and therefore the confidence intervals) have gotten larger, which could have to do with the fewer number of people in those categories as well. 
+
+## Previous Income & Gender
+
+We also explore the relationship between previous income in 1990 and 2000 with the respondents' income in 2012. We first plot each of the previous incomes with `totinc2012` (we take out the topcoded values to better see any trends within the data) and then do a pairs plot to see collinearity. 
+
+```{r}
+income1990.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  filter(totinc1990 < max(totinc1990, na.rm=TRUE)) %>%
+  ggplot(aes(x=totinc1990, y=totinc2012, color=gender)) + geom_point() + stat_smooth()
+
+#income1990.gender
+#ggplotly(income1990.gender)
+
+income2000.gender <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  filter(totinc2000 < max(totinc2000, na.rm=TRUE)) %>%
+  ggplot(aes(x=totinc2000, y=totinc2012, color=gender)) + geom_point() + stat_smooth()
+
+#income2000.gender
+#ggplotly(income2000.gender)
+
+ggarrange(income1990.gender + ggtitle("2012 Income by 1990 Income") + xlab("Total Income 1990") + ylab("Total Income 2012"), 
+          income2000.gender + ggtitle("2012 Income by 2000 Income") + xlab("Total Income 2000") + ylab("Total Income 2012"), 
+          ncol=2, common.legend = TRUE, legend = "bottom")
+
+income.pairs <- nlsy %>%
+  filter(totinc1990 < max(totinc1990, na.rm=TRUE)) %>%
+  filter(totinc2000 < max(totinc2000, na.rm=TRUE)) %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  select("totinc1990", "totinc2000", "totinc2012") %>%
+  ggpairs()
+
+income.pairs
+```
+
+We can see from the graphs that there is at least somewhat of a positive correlation between both previous incomes and current (2012) income, which makes sense. We can also see from the pairs plots that the collinearity coefficients are relatively high across the board, so we won't be using either of the previous incomes in our model. 
+
+# Regression
+
+We now turn to building a model on variables that we've explored above. Based on the exploratory analysis, this is the regression model I've created: 
+
+`gender.lm <- lm(totinc2012 ~ gender + race + edu2012 + numjobs2012 + ispolicestop + ischarged, data = nlsy)`
+
+We'll explore how well this fits the data through diagnostic plotting and omitting certain variables to see the omitted variable bias. 
+
+You can again see the appendix section for a reminder on how these variables are coded. 
+
+## Introduction
+
+We first need to decide how we're handling missing and topcoded values. 
+
+We don't want coefficients for where factor values are `na` because that's difficult to interpret, and we don't want that messing with the regression for where the values do exist. So I've decided for those reasons to remove the `na` values. 
+
+The next question is how to handle the top coded values. We can plot the `lm` object to see what the diagnostic plots look like for the regression where we keep the top coded values in.
+
+```{r}
+nlsy.nona.nofilt <- nlsy %>%
+  filter(!is.na(race), !is.na(edu2012), !is.na(ischarged), !is.na(ispolicestop))
+
+gender.lm.full0 <- lm(totinc2012 ~ gender + race + edu2012 + numjobs2012 + ispolicestop + ischarged, data = nlsy.nona.nofilt)
+
+kable(summary(gender.lm.full0)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output with TopCoded", digits = c(3,3,3,4))
+
+plot(gender.lm.full0)
+```
+
+This next set of plots is for the regression model where we take the topcoded values out. 
+
+```{r}
+nlsy.nona <- nlsy %>%
+  filter(totinc2012 < max(totinc2012, na.rm=TRUE)) %>%
+  filter(!is.na(race), !is.na(edu2012), !is.na(ischarged), !is.na(ispolicestop)) 
+
+gender.lm.full <- lm(totinc2012 ~ gender + race + edu2012 + numjobs2012 + ispolicestop + ischarged, data = nlsy.nona)
+
+kable(summary(gender.lm.full)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output without TopCoded", digits = c(3,3,3,4))
+
+plot(gender.lm.full)
+```
+
+Neither set of plots look great (residuals plots show a discernable trend when they shouldn't and should just be regular noise, it seems like a linear model is not the best fit by those trends, and qqplots show a strong trend toward nonnormality), but the plots for the regression where we take the top coded variables out definitely look better than the plots for the regression where we left them in, so we'll continue with the analysis without the topcoded values. 
+
+Let's take a look at the regression coefficients and explore what they mean.
+
+```{r}
+kable(summary(gender.lm.full)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output without TopCoded", digits = c(3,3,3,4))
+```
+
+The gender female coefficient tells us that, holding all else constant (that is, holding race, education, number of previous jobs, and the two crime variables constant), <b>females make \$17,931.48 less than men of the same race, education level, number of previous jobs, and same crime statistics</b>. 
+
+The same can be said for all of the other coefficients - black people, controlling for everything plus gender, make \$12,160.66 less than the "other" group; hispanic folks make \$4,689.72 less than the "other" race group; people with college and post college levels of educational attainment make significantly more than those with only an elementary school level of education(\$32,212.66 and \$52,070 more, respectively); people with more previous jobs make \$583.08 less per additional previous job; and folks who have been stopped by the police or charged with a crime make \$257.51 and \$6,810.90 less than those who haven't, respectively, holding all elese constant. It's also worth noting that the `edu2012Middle` variable and the`ispolicestopYes` coefficients aren't statistically significant at an alpha of 0.05. 
+
+These other coefficients are less important to our analysis than our gender coefficient, which is an important finding. We've explored how race and gender, education and gender, previous jobs and gender, and crime and gender interact with one another in the data analysis section, so to see that even holding all of those different factors constant females still make \$17,931.48 less than men is an important finding. 
+
+We continue to explore the regression below.
+
+## Testing Collinearity
+
+We next do a pairs plot to see if there's any discrinable collinearity between any of the variables we've chosen. It's hard to say for sure with a coefficient because most of these are categorical variables, so this is really just for exploratory analysis.
+
+```{r}
+
+nlsy.crime.vars <- nlsy.nona[,c("gender", "race", "edu2012", "numjobs2012", "ispolicestop", "ischarged")]
+
+ggpairs(nlsy.crime.vars)
+```
+
+The one set of variables that is especially interesting to figuring out the relationship between is `ispolicestop` and `ischarged`. Intutively they seem like they would have a relationship. `ispolicestop` is not very significant in the initial regression (with a p-value of `r summary(gender.lm.full)$coef["ispolicestopYes","Pr(>|t|)"]`)  while `ischarged` is (with a p-value of `r summary(gender.lm.full)$coef["ischargedYes","Pr(>|t|)"]`), so we're curious if that would change when we take one out. 
+
+We test both these variables by seeing what the regression looks like when we take out one and then the other. 
+
+```{r}
+gender.lm.full2 <- update(gender.lm.full, .~. - ischarged)
+kable(summary(gender.lm.full2)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output without ischarged", digits = c(3,3,3,4))
+
+```
+
+When we take out `ischarged` from the model, The p-value for `ispolicestop` goes down, but only to `r summary(gender.lm.full2)$coef["ispolicestopYes","Pr(>|t|)"]`, which is still not significant. 
+
+We then try to take out `ispolicestop`. 
+
+```{r}
+gender.lm.full3 <- update(gender.lm.full, .~. - ispolicestop)
+kable(summary(gender.lm.full3)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output wihtout ispolicestop", digits = c(3,3,3,4))
+```
+
+`ischarged` stays significant with a p-value now of `r summary(gender.lm.full3)$coef["ischargedYes","Pr(>|t|)"]`, so we can see that this variable seems to be more important to the model than `ispolicestop`. We'd still expect them to be related, so we try adding an interaction term and try an anova to see if it's significant. 
+
+```{r}
+gender.lm.full4 <- update(gender.lm.full, .~. + ispolicestop*ischarged)
+kable(summary(gender.lm.full4)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output", digits = c(3,3,3,4))
+
+kable(anova(gender.lm.full4, gender.lm.full, test="Chisq"), caption = "ANOVA Output for ispolicestop*ischarged")
+```
+
+With a intercept p-value of `r summary(gender.lm.full4)$coef["ispolicestopYes:ischargedYes","Pr(>|t|)"]` and an anova p-value of `r  anova(gender.lm.full4, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]` we see that our hypothesis was wrong and that the interaction term doesn't actually add anything to the regression. 
+
+We then run quick anova tests on both of these variables to see which one to keep in our model moving forward. With a p-value of `r  anova(update(gender.lm.full3, .~. + ispolicestop), gender.lm.full3, test="Chisq")$"Pr(>Chi)"[2]` for `ispolicestop` and one of `r  anova(update(gender.lm.full2, .~. + ischarged), gender.lm.full2, test = "Chisq")$"Pr(>Chi)"[2]` for `ischarged`, we remove `ispolicestop` from our regression and move forward to test other interaction terms with gender. 
+
+```{r}
+kable(anova(update(gender.lm.full2, .~. + ischarged), gender.lm.full2, test = "Chisq"), caption = "ANOVA Output for ischarged")
+kable(anova(update(gender.lm.full3, .~. + ispolicestop), gender.lm.full3, test = "Chisq"), caption = "ANOVA Output for ispolicestop")
+
+gender.lm.full <- update(gender.lm.full, .~. - ispolicestop)
+```
+
+## Testing Interaction Terms
+
+We saw earlier that the residuals plots for the regression implied that our model wasn't a great model to fit these variables, due to lack of normality and needing a nonlinear model, among other issues. We now test in this section to see if adding an interaction term between gender and one other variable would fix these issues. To choose which interaction term to try adding, we test anova function on each interaction term and choose the one with the most significant p-value. 
+
+### Gender * Race
+
+We try `gender*race` first. Gender and race as we saw earlier are interrelated, and it makes sense that these two interracted would have a significant impact on income gaps between men and women. 
+
+```{r}
+gender.lm.raceinteract <- update(gender.lm.full, .~. + gender*race)
+
+kable(summary(gender.lm.raceinteract)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for gender*race", digits = c(3,3,3,4))
+kable(anova(gender.lm.raceinteract, gender.lm.full, test="Chisq"), caption = "ANOVA Output for gender*race")
+```
+
+We see that with small p-values of the intercepts and an anova p-value of `r anova(gender.lm.raceinteract, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]` that it is. 
+
+### Gender * Education
+
+We next try `gender*edu2012`. Education levels can also be related to gender, so we expect this to have an impact as well. 
+
+```{r}
+gender.lm.edu2012interact <- update(gender.lm.full, .~. + gender*edu2012)
+
+kable(summary(gender.lm.edu2012interact)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for gender*edu2012", digits = c(3,3,3,4))
+kable(anova(gender.lm.edu2012interact, gender.lm.full, test="Chisq"), caption = "ANOVA Output for gender*edu2012")
+```
+
+With an anova p-value of `r anova(gender.lm.edu2012interact, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]`, we see that it is. It is interesting to note that the p-values for the individual intercepts in the model are not significant, but the term itself is a significant predictor of `totinc2012`.
+
+### Gender * Number of Previous Jobs
+
+We noticed earlier that there didn't seem to be a discernable trend between gender and number of previous jobs, but it's worth checking out that interaction as well - so we add `gender*numjobs2012`. It's important to note here that `numjobs2012` is coded as a numeric variable.
+
+```{r}
+gender.lm.numjobs2012interact <- update(gender.lm.full, .~. + gender*numjobs2012)
+
+kable(summary(gender.lm.numjobs2012interact)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for gender*numjobs2012", digits = c(3,3,3,4))
+kable(anova(gender.lm.numjobs2012interact, gender.lm.full, test="Chisq"), caption = "ANOVA Output for gender*numjobs2012")
+```
+
+Even though we didn't see any trends in the data, with an anova p-value of `r anova(gender.lm.numjobs2012interact, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]`, it seems like this interaction is also significant in this model as a predictor. 
+
+### Gender * Crime Charges
+
+We then check `gender*ischarged`.
+
+```{r}
+gender.lm.ischargedinteract <- update(gender.lm.full, .~. + gender*ischarged)
+
+kable(summary(gender.lm.ischargedinteract)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for gender*ischarged", digits = c(3,3,3,4))
+kable(anova(gender.lm.ischargedinteract, gender.lm.full, test="Chisq"), caption = "ANOVA Output for gender*ischarged")
+```
+
+We see that it is less significant than expected (but still significant) at a p-value of `r anova(gender.lm.ischargedinteract, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]`.
+
+### Race * Crime Charges
+
+We explored earlier the relationship between `race` and `ischarged`, so we're curious if an interaction term between those two variables would be significant - we try adding `race*ischarged` to the model.
+
+```{r}
+gender.lm.raceischargedinteract <- update(gender.lm.full, .~. + race*ischarged)
+
+kable(summary(gender.lm.raceischargedinteract)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for race*ischarged", digits = c(3,3,3,4))
+kable(anova(gender.lm.raceischargedinteract, gender.lm.full, test="Chisq"), caption = "ANOVA Output for race*ischarged")
+```
+
+We see that it is in fact not significant, with an anova p-value of `r anova(gender.lm.raceischargedinteract, gender.lm.full, test="Chisq")$"Pr(>Chi)"[2]`.
+
+## New Regression
+
+With `gender*race` being the most significant interaction term, we add that to our model and plot it to see if that helps our plots look better at all. 
+
+```{r}
+gender.lm.full <- update(gender.lm.full, .~. + gender*race - ispolicestop)
+
+kable(summary(gender.lm.full)$coef, col.names = c("Coefficient", "Std Error", "T-Value", "Significant?"), caption = "Regression Output for regression with gender*race", digits = c(3,3,3,4))
+
+plot(gender.lm.full)
+```
+
+It doesn't - the diagnostic plots still show some trend when they should be just scatter or noise (though the trend line is straight for the residuals vs fitted graph), and the qqplot shows a distinct lack of normality, especially on the tails. The plots don't look like they've changed much. 
+
+It's worth going through the coefficients individually again - in this new regression model, <b>holding all else constant, including the interaction between gender and race, being a female means that total income in 2012 is \$23,049.25 less than males of the same race, education level, number of previous jobs, and crime charge status</b>. This is again, an important finding, and curious that it's more than our original number. We continue our discussion below. 
+
+# Discussion
+
+Our findings show that the variables `race`, `edu2012`, `numjobs2012`, `ischarged` and their individual interactions with `gender` are significant in predicting the outcome of `totinc2012`, but these findings should all be taken with a huge grain of salt - we are trying to predict a huge outcome variable with very few variables, and the regression diagnostic plots (even when we added the most significant interaction term) show a lack of normality and the need for a nonlinear model, which ours isn't. 
+
+For those reasons, there is very little confidence in this model or our analysis. A lot of our findings could also be impacted by the fact that we took out the topcoded values - we saw in the exploratory analysis that our error bars and confidence intervals got larger when we took the topcoded values out, so there may have been some variables that would be more significant if we'd kept them in. Some variables may have been impacted by low response numbers as well, since we took all of the missing values out, but also because some variables like `ischarged` had very few responses for "Yes" relative to responses of "No." That definitely may have skewed both our model and our findings. 
+
+# Appendix
+
+| Variable Name  | Question Asked on Survey  |  Recoded Responses |
+|----------------|---------------------------|--------------------|
+|  totinc2012 | TOTAL INCOME FROM WAGES AND SALARY IN PAST CALENDAR YEAR (2012)  | numeric, topcoded  |
+| totinc1990  |  TOTAL INCOME FROM WAGES AND SALARY IN PAST CALENDAR YEAR (1990) |  numeric, topcoded |
+| totinc2000  |  TOTAL INCOME FROM WAGES AND SALARY IN PAST CALENDAR YEAR (2000) |  numeric, topcoded |
+| numjobs2012  |  NUMBER OF DIFFERENT JOBS EVER REPORTED AS OF INTERVIEW DATE
+  |  numeric |
+| edu2012  | HIGHEST GRADE COMPLETED AS OF MAY 1 SURVEY YEAR  | `0`="Elementary",<br>`93`="Elementary",<br>`94`="Elementary",<br>`1`="Elementary",<br>`2`="Elementary",<br>`3`="Elementary",<br>`4`="Elementary",<br>`5`="Elementary",<br>`6`="Middle",<br>`7`="Middle",<br>`8`="Middle",<br>`9`="High",<br>`10`="High",<br>`11`="High",<br>`12`="High",<br>`13`="College",<br>`14`="College",<br>`15`="College",<br>`16`="College",<br>`17`="Post College",<br>`18`="Post College",<br>`19`="Post College",<br>`20`="Post College",<br>`95`="Unknown"  |
+|  race | R'S RACIAL/ETHNIC COHORT FROM SCREENER  |  `3`="Other",<br> `2`="Black",<br> `1`="Hispanic" |
+|  gender | SEX OF R  | `1`="Male",<br> `2`="Female"  |
+| ispolicestop  | EVER "STOPPED" BY POLICE FOR OTHER THAN MINOR TRAFFIC OFFENSE?  | `0`="No",<br> `1`="Yes"  |
+| ischarged  | EVER CHARGED WITH ILLEGAL ACTIVITY? 80 INT (EXC MINOR TRAFFIC OFFENSE) |  `0`="No",<br> `1`="Yes" |
+|  faplace | FAMILY ATTITUDES - WOMAN'S PLACE IS IN THE HOME?  | `1`= "Strongly Disagree",<br> `2` = "Disagree",<br> `3`="Agree",<br> `4`="Strongly Agree"  |
+|  fatime | FAMILY ATTITUDES - WIFE WITH FAMILY HAS NO TIME FOR OTHER EMPLOYMENT?  | `1`= "Strongly Disagree",<br> `2` = "Disagree",<br> `3`="Agree",<br> `4`="Strongly Agree"  |
+| fauseful  | FAMILY ATTITUDES - WORKING WIFE FEELS MORE USEFUL?  | `4`="Strongly Agree",<br> `3`="Agree",<br> `2` = "Disagree",<br> `1`= "Strongly Disagree" |
+| fajuvie  |  FAMILY ATTITUDES - EMPLOYMENT OF WIVES LEADS TO JUVENILE DELINQUENCY? | `1`= "Strongly Disagree",<br> `2` = "Disagree",<br> `3`="Agree",<br> `4`="Strongly Agree"  |
+|  faroles | FAMILY ATTITUDES - TRADITIONAL HUSBAND/WIFE ROLES BEST?  | `1`= "Strongly Disagree",<br> `2` = "Disagree",<br> `3`="Agree",<br> `4`="Strongly Agree"  |
+| fashare  |FAMILY ATTITUDES - MEN SHOULD SHARE HOUSEWORK?   | `4`="Strongly Agree",<br> `3`="Agree",<br> `2` = "Disagree",<br> `1`= "Strongly Disagree" |
+|  fahappier | FAMILY ATTITUDES - WOMEN ARE HAPPIER IN TRADITIONAL ROLES?  | `1`= "Strongly Disagree",<br> `2` = "Disagree",<br> `3`="Agree",<br> `4`="Strongly Agree"  |
+
+```{r}
+count.genderrace <- nlsy %>%
+  group_by(race, gender) %>%
+  summarize(count = n()) 
+
+kable(count.genderrace, col.names = c("Race", "Gender", "Count"), caption = "Count by Race & Gender")
+
+count.genderedu <- nlsy %>%
+  group_by(edu2012, gender) %>%
+  summarize(count = n()) 
+
+kable(count.genderedu, col.names = c("Education Level", "Gender", "Count"), caption = "Count by Education Level & Gender")
+```
